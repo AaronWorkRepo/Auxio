@@ -22,9 +22,11 @@
 #include "JClassRef.h"
 #include "JMetadataBuilder.h"
 #include "JObjectRef.h"
+#include "JStringRef.h"
 #include "util.h"
 
 #include "taglib/fileref.h"
+#include "taglib/tpropertymap.h"
 #include "taglib/flacfile.h"
 #include "taglib/mp4file.h"
 #include "taglib/mp4properties.h"
@@ -319,5 +321,79 @@ Java_org_oxycblt_musikr_metadata_TagLibJNI_openNative(JNIEnv *env,
         LOGE("Unable to parse metadata in %s: %s", name.c_str(), e.what());
         delete overriddenFile;
         return metadataResultProviderFailed(env);
+    }
+}
+
+// JNI strings are UTF-8. TagLib::String(const char*) defaults to Latin-1, which corrupts
+// non-ASCII paths and values (e.g. Chinese filenames), so always decode explicitly.
+static TagLib::String toUtf8String(JNIEnv *env, jstring jValue) {
+    const char *chars = env->GetStringUTFChars(jValue, nullptr);
+    TagLib::String value(chars, TagLib::String::UTF8);
+    env->ReleaseStringUTFChars(jValue, chars);
+    return value;
+}
+
+static void applyProperty(JNIEnv *env, TagLib::PropertyMap &properties,
+        jstring jValue, const char *key) {
+    if (jValue == nullptr) {
+        // Leave the field untouched.
+        return;
+    }
+    TagLib::String value = toUtf8String(env, jValue);
+    if (value.isEmpty()) {
+        properties.erase(key);
+    } else {
+        properties.replace(key, TagLib::StringList(value));
+    }
+}
+
+/**
+ * Writes tag properties to the audio file at jPath.
+ *
+ * Null jstring arguments leave the corresponding field untouched; empty strings remove it.
+ * Returns true when TagLib saved the file and the result is still readable.
+ */
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_oxycblt_musikr_metadata_TagLibJNI_writeNative(JNIEnv *env, jobject /* this */,
+        jstring jPath, jstring jTitle, jstring jArtist, jstring jAlbum, jstring jAlbumArtist,
+        jstring jGenre, jstring jYear, jstring jTrack, jstring jDisc, jstring jComment) {
+    if (jPath == nullptr) {
+        return JNI_FALSE;
+    }
+    TagLib::String path = toUtf8String(env, jPath);
+    if (path.isEmpty()) {
+        return JNI_FALSE;
+    }
+    const char *nativePath = path.toCString(true);
+    try {
+        TagLib::FileRef fileRef(nativePath, true, TagLib::AudioProperties::Fast);
+        if (fileRef.isNull() || fileRef.file() == nullptr) {
+            LOGE("Unable to open %s for tag writing", nativePath);
+            return JNI_FALSE;
+        }
+
+        TagLib::PropertyMap properties = fileRef.file()->properties();
+        applyProperty(env, properties, jTitle, "TITLE");
+        applyProperty(env, properties, jArtist, "ARTIST");
+        applyProperty(env, properties, jAlbum, "ALBUM");
+        applyProperty(env, properties, jAlbumArtist, "ALBUMARTIST");
+        applyProperty(env, properties, jGenre, "GENRE");
+        applyProperty(env, properties, jYear, "DATE");
+        applyProperty(env, properties, jTrack, "TRACKNUMBER");
+        applyProperty(env, properties, jDisc, "DISCNUMBER");
+        applyProperty(env, properties, jComment, "COMMENT");
+
+        fileRef.file()->setProperties(properties);
+        if (!fileRef.file()->save()) {
+            LOGE("TagLib save failed for %s", nativePath);
+            return JNI_FALSE;
+        }
+
+        // Verify the file is still a valid, readable audio file.
+        TagLib::FileRef verify(nativePath);
+        return (!verify.isNull() && verify.file() != nullptr) ? JNI_TRUE : JNI_FALSE;
+    } catch (std::exception &e) {
+        LOGE("Tag write failed for %s: %s", nativePath, e.what());
+        return JNI_FALSE;
     }
 }

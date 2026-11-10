@@ -39,4 +39,36 @@ internal object TagLibJNI {
     }
 
     private external fun openNative(inputStream: NativeInputStream): MetadataResult
+
+    /**
+     * Write tags to a file. Null values leave a field untouched, empty strings remove it.
+     *
+     * Note: This method is blocking and should be called off the main thread.
+     */
+    fun writeTags(
+        path: String,
+        title: String? = null,
+        artist: String? = null,
+        album: String? = null,
+        albumArtist: String? = null,
+        genre: String? = null,
+        year: String? = null,
+        track: String? = null,
+        disc: String? = null,
+        comment: String? = null,
+    ): Boolean =
+        writeNative(path, title, artist, album, albumArtist, genre, year, track, disc, comment)
+
+    private external fun writeNative(
+        path: String,
+        title: String?,
+        artist: String?,
+        album: String?,
+        albumArtist: String?,
+        genre: String?,
+        year: String?,
+        track: String?,
+        disc: String?,
+        comment: String?,
+    ): Boolean
 }

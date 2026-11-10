@@ -119,6 +119,14 @@ private constructor(
                         continue
                     }
 
+                    // Local customization: exclude phone call recordings ("通话录音*.m4a").
+                    if (
+                        displayName.startsWith("通话录音") &&
+                            displayName.endsWith(".m4a", ignoreCase = true)
+                    ) {
+                        continue
+                    }
+
                     val newPath = relativePath.file(displayName)
                     val mimeType = cursor.getString(mimeTypeIndex)
                     val lastModified = cursor.getLong(lastModifiedIndex)

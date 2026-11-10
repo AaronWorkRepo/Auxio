@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"  />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Local customization: write tag edits to music files on behalf of the AI assistant. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <!-- Bluetooth auto-connect functionality (Disabled until permission workflow can be made) -->
 <!--    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />-->
@@ -143,6 +147,15 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_info" />
+        </receiver>
+
+        <!-- Local customization: headless tag editing for the AI assistant. -->
+        <receiver
+            android:name=".assistant.AssistantEditReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.oxycblt.auxio.action.EDIT_TAGS" />
+            </intent-filter>
         </receiver>
 
         <!-- Tasker 'start service' integration -->

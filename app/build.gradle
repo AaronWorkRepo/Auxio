@@ -154,8 +154,9 @@ dependencies {
     // --- THIRD PARTY ---
 
     // Exoplayer (Vendored)
+    // NOTE(local): ffmpeg decoder omitted for the Windows test build (module refuses to build on
+    // Windows). Playback falls back to MediaCodecAudioRenderer.
     implementation "androidx.media3:media3-exoplayer:1.11.0"
-    implementation "androidx.media3:media3-decoder-ffmpeg:1.11.0"
 
     // Image loading
     implementation 'io.coil-kt.coil3:coil-core:3.6.0'

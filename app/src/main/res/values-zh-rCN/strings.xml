@@ -249,6 +249,11 @@
     <string name="lng_playlist_renamed">已重命名播放列表</string>
     <string name="lng_playlist_deleted">已删除播放列表</string>
     <string name="lbl_edit">编辑</string>
+    <string name="lbl_edit_tags">编辑标签</string>
+    <string name="lbl_album_artist">专辑艺术家</string>
+    <string name="msg_tags_saved">标签已保存</string>
+    <string name="err_tags_failed">无法保存标签</string>
+    <string name="err_no_edit_path">无法编辑此位置</string>
     <string name="lbl_appears_on">出现于</string>
     <string name="lbl_share">分享</string>
     <string name="def_disc">无唱片</string>

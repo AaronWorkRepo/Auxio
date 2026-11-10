@@ -33,6 +33,7 @@ import org.oxycblt.auxio.list.adapter.UpdateInstructions
 import org.oxycblt.auxio.ui.ViewBindingMaterialDialogFragment
 import org.oxycblt.auxio.util.collectImmediately
 import org.oxycblt.musikr.Song
+import org.oxycblt.musikr.tag.Name
 import timber.log.Timber as L
 
 /**
@@ -47,13 +48,18 @@ class SongDetailDialog : ViewBindingMaterialDialogFragment<DialogSongDetailBindi
     // as a UID, as that is the only safe way to parcel an song.
     private val args: SongDetailDialogArgs by navArgs()
     private val detailAdapter = SongPropertyAdapter()
+    private var song: Song? = null
 
     override fun onCreateBinding(inflater: LayoutInflater) =
         DialogSongDetailBinding.inflate(inflater)
 
     override fun onConfigDialog(builder: AlertDialog.Builder) {
         super.onConfigDialog(builder)
-        builder.setTitle(R.string.lbl_props).setPositiveButton(R.string.lbl_ok, null)
+        builder
+            .setTitle(R.string.lbl_props)
+            .setPositiveButton(R.string.lbl_ok, null)
+            // Local customization: edit the song's tags from the properties panel.
+            .setNeutralButton(R.string.lbl_edit) { _, _ -> showEditTags() }
     }
 
     override fun onBindingCreated(binding: DialogSongDetailBinding, savedInstanceState: Bundle?) {
@@ -67,11 +73,45 @@ class SongDetailDialog : ViewBindingMaterialDialogFragment<DialogSongDetailBindi
     }
 
     private fun updateSong(song: Song?) {
-        L.d("No song to show, navigating away")
         if (song == null) {
+            L.d("No song to show, navigating away")
             findNavController().navigateUp()
             return
         }
+        this.song = song
+    }
+
+    private fun showEditTags() {
+        val song = song ?: return
+        val date =
+            song.date?.let { date ->
+                buildString {
+                    append(date.year)
+                    date.month?.let { append("-").append(it.toString().padStart(2, '0')) }
+                    date.day?.let { append("-").append(it.toString().padStart(2, '0')) }
+                }
+            } ?: ""
+        TagEditDialog.newInstance(
+                uri = song.uri.toString(),
+                title = (song.name as? Name.Known)?.raw.orEmpty(),
+                artist =
+                    song.artists
+                        .mapNotNull { (it.name as? Name.Known)?.raw }
+                        .joinToString(", "),
+                album = (song.album.name as? Name.Known)?.raw.orEmpty(),
+                albumArtist =
+                    song.album.artists
+                        .mapNotNull { (it.name as? Name.Known)?.raw }
+                        .joinToString(", "),
+                genre =
+                    song.genres.mapNotNull { (it.name as? Name.Known)?.raw }.joinToString(", "),
+                date = date,
+                track = song.track?.toString() ?: "",
+                disc = song.disc?.number?.toString() ?: "",
+            )
+            // NOTE(local): use the parent manager; this dialog is dismissed when the neutral
+            // button is pressed, which would also tear down a child-fragment dialog.
+            .show(parentFragmentManager, "edit_tags")
     }
 
     private fun updateSongProperties(songProperties: List<SongProperty>) {

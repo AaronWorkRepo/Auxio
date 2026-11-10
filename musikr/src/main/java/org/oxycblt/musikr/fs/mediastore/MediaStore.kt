@@ -171,10 +171,18 @@ private constructor(
             )
 
         /**
+         * Local customization: phone call recordings ("通话录音*.m4a") must never enter the
+         * library.
+         */
+        private const val CUSTOM_EXCLUDED_FILES =
+            "${AOSPMediaStore.MediaColumns.DISPLAY_NAME} NOT LIKE '通话录音%.m4a'"
+
+        /**
          * The base selector that works across all versions of android. Excludes files with zero
          * size.
          */
-        private const val BASE_SELECTOR = "NOT ${AOSPMediaStore.Audio.Media.SIZE}=0"
+        private const val BASE_SELECTOR =
+            "NOT ${AOSPMediaStore.Audio.Media.SIZE}=0 AND $CUSTOM_EXCLUDED_FILES"
 
         /** The base projection that works across all versions of android. */
         private val BASE_PROJECTION =

@@ -83,14 +83,16 @@ dependencies {
 }
 
 tasks.register("assembleTaglib", Exec, {
-    def jniDir = "$projectDir/src/main/cpp"
+    // NOTE(local): forward slashes so `sh -c` on Windows does not eat the backslashes.
+    def jniDir = "$projectDir/src/main/cpp".replace("\\", "/")
     def libs = new File("$jniDir/taglib/pkg")
     if (libs.exists()) {
         commandLine "true"
         return
     }
-    def ndkDir = androidComponents.sdkComponents.ndkDirectory.get().asFile
-    commandLine "sh", "-c", "$jniDir/build_taglib.sh $jniDir $ndkDir"
+    def ndkDir = androidComponents.sdkComponents.ndkDirectory.get().asFile.toString().replace("\\", "/")
+    // NOTE(local): pass argv directly; `sh -c "<...>"` gets mangled by Windows quoting.
+    commandLine "sh", "$jniDir/build_taglib.sh", "$jniDir", "$ndkDir"
 })
 
 afterEvaluate {
