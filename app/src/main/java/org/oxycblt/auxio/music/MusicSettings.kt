@@ -52,6 +52,12 @@ interface MusicSettings : Settings<MusicSettings.Listener> {
     /** The currently configured MediaStore query (if any) * */
     var mediaStoreQuery: MediaStore.Query
 
+    /**
+     * Local customization: URIs of files the user removed from the library. The files remain on
+     * disk.
+     */
+    var hiddenUris: Set<String>
+
     /** Whether to be actively watching for changes in the music library. */
     val shouldBeObserving: Boolean
 
@@ -165,6 +171,18 @@ class MusicSettingsImpl @Inject constructor(@ApplicationContext private val cont
             }
         }
 
+    override var hiddenUris: Set<String>
+        get() =
+            sharedPreferences
+                .getStringSet(getString(R.string.set_key_hidden_uris), emptySet())
+                ?.toSet() ?: emptySet()
+        set(value) {
+            sharedPreferences.edit {
+                putStringSet(getString(R.string.set_key_hidden_uris), value)
+                apply()
+            }
+        }
+
     override var mediaStoreQuery: MediaStore.Query
         get() {
             val filterMode =
@@ -191,6 +209,7 @@ class MusicSettingsImpl @Inject constructor(@ApplicationContext private val cont
                     },
                 filtered = filteredLocations,
                 excludeNonMusic = excludeNonMusic,
+                excludedUris = hiddenUris,
             )
         }
         set(value) {

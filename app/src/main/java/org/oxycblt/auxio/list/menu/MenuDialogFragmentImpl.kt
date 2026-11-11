@@ -18,23 +18,37 @@
  
 package org.oxycblt.auxio.list.menu
 
+import android.media.MediaScannerConnection
+import android.os.Build
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.view.MenuItem
+import android.widget.CheckBox
+import android.widget.Toast
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.navArgs
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.File
+import javax.inject.Inject
+import kotlin.concurrent.thread
 import org.oxycblt.auxio.R
 import org.oxycblt.auxio.databinding.DialogMenuBinding
 import org.oxycblt.auxio.detail.DetailViewModel
 import org.oxycblt.auxio.list.ListViewModel
+import org.oxycblt.auxio.music.MusicSettings
 import org.oxycblt.auxio.music.MusicViewModel
 import org.oxycblt.auxio.music.resolve
 import org.oxycblt.auxio.music.resolveNames
 import org.oxycblt.auxio.playback.PlaybackViewModel
 import org.oxycblt.auxio.playback.formatDurationMs
 import org.oxycblt.auxio.util.getPlural
+import org.oxycblt.auxio.util.resolveAudioPath
 import org.oxycblt.auxio.util.share
 import org.oxycblt.auxio.util.showToast
+import timber.log.Timber as L
 import org.oxycblt.musikr.Artist
 import org.oxycblt.musikr.Genre
 import org.oxycblt.musikr.Playlist
@@ -52,6 +66,7 @@ class SongMenuDialogFragment : MenuDialogFragment<Menu.ForSong>() {
     private val detailModel: DetailViewModel by activityViewModels()
     private val musicModel: MusicViewModel by activityViewModels()
     private val playbackModel: PlaybackViewModel by activityViewModels()
+    @Inject lateinit var musicSettings: MusicSettings
     private val args: SongMenuDialogFragmentArgs by navArgs()
 
     override val parcel
@@ -85,7 +100,88 @@ class SongMenuDialogFragment : MenuDialogFragment<Menu.ForSong>() {
             R.id.action_album_details -> detailModel.showAlbum(menu.song.album)
             R.id.action_share -> requireContext().share(menu.song)
             R.id.action_detail -> detailModel.showSong(menu.song)
+            R.id.action_remove_from_library -> confirmRemoveFromLibrary(menu.song)
             else -> error("Unexpected menu item selected $item")
+        }
+    }
+
+    // Local customization: hide non-music audio from the library, optionally deleting the file.
+    private fun confirmRemoveFromLibrary(song: Song) {
+        val context = requireContext()
+        // The menu bottom sheet is detached as soon as the item is clicked, so resolve everything
+        // that needs the activity/fragment up-front. The confirmation dialog outlives it.
+        val appContext = context.applicationContext
+        val viewModel = musicModel
+        val hiddenUris = musicSettings.hiddenUris
+        val checkbox =
+            CheckBox(context).apply {
+                setText(R.string.lbl_also_delete_file)
+                val padding = resources.getDimensionPixelSize(R.dimen.spacing_mid_large)
+                setPadding(padding, 0, padding, 0)
+            }
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.lbl_remove_from_library)
+            .setMessage(
+                context.getString(
+                    R.string.lbl_remove_from_library_msg,
+                    song.name.resolve(context),
+                )
+            )
+            .setView(checkbox)
+            .setPositiveButton(R.string.lbl_remove) { _, _ ->
+                removeFromLibrary(song, checkbox.isChecked, appContext, viewModel, hiddenUris)
+            }
+            .setNegativeButton(R.string.lbl_cancel, null)
+            .show()
+    }
+
+    private fun removeFromLibrary(
+        song: Song,
+        deleteFile: Boolean,
+        appContext: android.content.Context,
+        viewModel: MusicViewModel,
+        hiddenUris: Set<String>,
+    ) {
+        val uri = song.uri
+        musicSettings.hiddenUris = hiddenUris + uri.toString()
+        Toast.makeText(appContext, R.string.lng_removed_from_library, Toast.LENGTH_SHORT).show()
+        viewModel.refresh()
+
+        if (!deleteFile) {
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            Toast.makeText(appContext, R.string.err_need_all_files, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        thread(name = "DeleteSong") {
+            var success = false
+            try {
+                success = appContext.contentResolver.delete(uri, null, null) > 0
+            } catch (e: Exception) {
+                L.w(e, "MediaStore delete failed")
+            }
+            if (!success) {
+                try {
+                    val path = resolveAudioPath(appContext, uri)
+                    if (path != null) {
+                        success = File(path).delete()
+                        if (success) {
+                            MediaScannerConnection.scanFile(appContext, arrayOf(path), null, null)
+                        }
+                    }
+                } catch (e: Exception) {
+                    L.w(e, "Direct file delete failed")
+                }
+            }
+            if (!success) {
+                Handler(Looper.getMainLooper())
+                    .post {
+                        Toast.makeText(appContext, R.string.err_delete_failed, Toast.LENGTH_SHORT)
+                            .show()
+                    }
+            }
         }
     }
 }

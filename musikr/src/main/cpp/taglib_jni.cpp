@@ -18,6 +18,7 @@
  
 #include <jni.h>
 #include <string>
+#include <vector>
 #include "JInputStream.h"
 #include "JClassRef.h"
 #include "JMetadataBuilder.h"
@@ -27,6 +28,7 @@
 
 #include "taglib/fileref.h"
 #include "taglib/tpropertymap.h"
+#include "taglib/synchronizedlyricsframe.h"
 #include "taglib/flacfile.h"
 #include "taglib/mp4file.h"
 #include "taglib/mp4properties.h"
@@ -331,6 +333,109 @@ static TagLib::String toUtf8String(JNIEnv *env, jstring jValue) {
     TagLib::String value(chars, TagLib::String::UTF8);
     env->ReleaseStringUTFChars(jValue, chars);
     return value;
+}
+
+static void appendTimedLyrics(TagLib::File *file, std::vector<std::string> &out) {
+    auto *mpeg = dynamic_cast<TagLib::MPEG::File *>(file);
+    if (mpeg == nullptr) {
+        return;
+    }
+    auto *id3v2 = mpeg->ID3v2Tag();
+    if (id3v2 == nullptr) {
+        return;
+    }
+    for (auto *frame : id3v2->frameList("SYLT")) {
+        auto *sylt = dynamic_cast<TagLib::ID3v2::SynchronizedLyricsFrame *>(frame);
+        if (sylt == nullptr) {
+            continue;
+        }
+        for (const auto &entry : sylt->synchedText()) {
+            std::string text = entry.text.to8Bit(true);
+            if (text.empty()) {
+                continue;
+            }
+            out.push_back(std::to_string(entry.time) + "\x01" + text);
+        }
+    }
+}
+
+static void appendPropertyLyrics(TagLib::File *file, std::vector<std::string> &out) {
+    TagLib::PropertyMap properties = file->properties();
+    for (auto it = properties.begin(); it != properties.end(); ++it) {
+        const TagLib::String &key = it->first;
+        if (!(key == "LYRICS" || key == "UNSYNCEDLYRICS" || key.startsWith("LYRICS:"))) {
+            continue;
+        }
+        for (const auto &value : it->second) {
+            std::string text = value.to8Bit(true);
+            size_t start = 0;
+            while (start <= text.size()) {
+                size_t end = text.find('\n', start);
+                std::string line = text.substr(start,
+                        end == std::string::npos ? std::string::npos : end - start);
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                if (!line.empty()) {
+                    out.push_back(line);
+                }
+                if (end == std::string::npos) {
+                    break;
+                }
+                start = end + 1;
+            }
+        }
+    }
+}
+
+/**
+ * Extracts embedded lyrics. Timed lines (ID3v2 SYLT) are returned as "timeMs\u0001text";
+ * unsynchronized lines are returned as plain text. Returns null when no lyrics exist.
+ */
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_org_oxycblt_musikr_metadata_TagLibJNI_readLyricsNative(JNIEnv *env, jobject /* this */,
+        jobject jInputStream) {
+    std::vector<std::string> lines;
+    try {
+        JInputStream jStream {env, jInputStream};
+        TagLib::File *owned =
+                createFileFromContent(&jStream, false, TagLib::AudioProperties::Fast);
+        if (owned != nullptr) {
+            appendTimedLyrics(owned, lines);
+            if (lines.empty()) {
+                appendPropertyLyrics(owned, lines);
+            }
+            delete owned;
+        } else {
+            TagLib::FileRef fileRef {&jStream, false, TagLib::AudioProperties::Fast};
+            TagLib::File *file = fileRef.file();
+            if (file != nullptr) {
+                appendTimedLyrics(file, lines);
+                if (lines.empty()) {
+                    appendPropertyLyrics(file, lines);
+                }
+            }
+        }
+    } catch (std::exception &e) {
+        LOGE("Unable to read lyrics: %s", e.what());
+        return nullptr;
+    }
+
+    if (lines.empty()) {
+        return nullptr;
+    }
+    jclass stringClass = env->FindClass("java/lang/String");
+    if (stringClass == nullptr) {
+        return nullptr;
+    }
+    jobjectArray result = env->NewObjectArray(static_cast<jsize>(lines.size()), stringClass,
+            nullptr);
+    for (size_t i = 0; i < lines.size(); ++i) {
+        jstring line = env->NewStringUTF(lines[i].c_str());
+        env->SetObjectArrayElement(result, static_cast<jsize>(i), line);
+        env->DeleteLocalRef(line);
+    }
+    return result;
 }
 
 static void applyProperty(JNIEnv *env, TagLib::PropertyMap &properties,

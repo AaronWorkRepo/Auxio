@@ -114,6 +114,10 @@ private constructor(
                             AOSPMediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                             id.toString(),
                         )
+                    // Local customization: skip files the user removed from the library.
+                    if (uri.toString() in query.excludedUris) {
+                        continue
+                    }
                     val mimeType = cursor.getStringOrNull(mimeTypeIndex) ?: "audio/*"
                     val size = cursor.getLong(sizeIndex)
                     val dateAdded = cursor.getLong(dateAddedIndex) * 1000 // Convert to milliseconds
@@ -151,6 +155,8 @@ private constructor(
         val mode: FilterMode,
         val filtered: List<Location.Unopened>,
         val excludeNonMusic: Boolean,
+        /** Local customization: URIs hidden from the library by the user. */
+        val excludedUris: Set<String> = emptySet(),
     )
 
     enum class FilterMode {

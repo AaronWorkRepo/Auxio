@@ -98,8 +98,23 @@
     <string name="lbl_edit_tags">Edit tags</string>
     <string name="lbl_album_artist">Album artist</string>
     <string name="msg_tags_saved">Tags saved</string>
+    <string name="msg_tags_saved_rescan">Tags saved — applies after the next rescan</string>
     <string name="err_tags_failed">Could not save tags</string>
     <string name="err_no_edit_path">This location cannot be edited</string>
+    <string name="lbl_remove_from_library">Remove from library</string>
+    <string name="lbl_remove_from_library_msg">Hide "%1$s" from your library? The file stays on your device unless you delete it below.</string>
+    <string name="lbl_also_delete_file">Also delete the local file</string>
+    <string name="lbl_remove">Remove</string>
+    <string name="lng_removed_from_library">Removed from library</string>
+    <string name="err_delete_failed">Could not delete file</string>
+    <string name="set_library_folder">Library folder</string>
+    <string name="set_library_folder_desc">Choose one folder to load music from</string>
+    <string name="set_library_folder_include">Loading from a selected folder — tap to change</string>
+    <string name="set_library_folder_saf">File-picker mode — change it in Music sources</string>
+    <string name="msg_library_folder_set">Library folder set — rescanning</string>
+    <string name="err_need_all_files">Grant All files access to Auxio to edit files on the SD card</string>
+    <string name="lbl_lyrics">Lyrics</string>
+    <string name="lng_no_lyrics">No embedded lyrics</string>
 
     <!-- Search for music -->
     <string name="lbl_search">Search</string>

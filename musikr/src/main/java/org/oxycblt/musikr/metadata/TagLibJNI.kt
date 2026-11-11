@@ -41,6 +41,18 @@ internal object TagLibJNI {
     private external fun openNative(inputStream: NativeInputStream): MetadataResult
 
     /**
+     * Read embedded lyrics. Timed lines are "timeMs\u0001text", unsynchronized lines are plain.
+     *
+     * Note: This method is blocking and should be called off the main thread.
+     */
+    fun readLyrics(displayName: String, fis: FileInputStream): Array<String>? {
+        val stream = NativeInputStream(fis, displayName)
+        return readLyricsNative(stream)
+    }
+
+    private external fun readLyricsNative(inputStream: NativeInputStream): Array<String>?
+
+    /**
      * Write tags to a file. Null values leave a field untouched, empty strings remove it.
      *
      * Note: This method is blocking and should be called off the main thread.

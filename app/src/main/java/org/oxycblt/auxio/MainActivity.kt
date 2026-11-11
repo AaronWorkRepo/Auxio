@@ -68,11 +68,18 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
 
-        startService(
-            Intent(this, AuxioService::class.java)
-                .setAction(AuxioService.ACTION_START)
-                .putExtra(AuxioService.INTENT_KEY_START_ID, IntegerTable.START_ID_ACTIVITY)
-        )
+        try {
+            startService(
+                Intent(this, AuxioService::class.java)
+                    .setAction(AuxioService.ACTION_START)
+                    .putExtra(AuxioService.INTENT_KEY_START_ID, IntegerTable.START_ID_ACTIVITY)
+            )
+        } catch (e: Exception) {
+            // Android 12+ can reject a service start during a resume race while the process is
+            // still classified as background (BackgroundServiceStartNotAllowedException). The
+            // service will be started again on a later resume / binding, so don't kill the app.
+            L.w(e, "Unable to start service on resume")
+        }
 
         if (!startIntentAction(intent)) {
             // No intent action to do, just restore the previously saved state.

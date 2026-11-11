@@ -42,6 +42,8 @@ import org.oxycblt.musikr.Playlist
 import org.oxycblt.musikr.Song
 import org.oxycblt.musikr.Storage
 import org.oxycblt.musikr.cache.MutableCache
+import org.oxycblt.musikr.fs.Location
+import org.oxycblt.musikr.fs.Volume
 import org.oxycblt.musikr.fs.mediastore.MediaStore
 import org.oxycblt.musikr.fs.saf.SAF
 import org.oxycblt.musikr.playlist.db.StoredPlaylists
@@ -379,6 +381,34 @@ constructor(
         }
     }
 
+    private fun migrateSafToMediaStore() {
+        if (musicSettings.locationMode != LocationMode.SAF) {
+            return
+        }
+        val sources = musicSettings.safQuery.source
+        if (sources.size != 1) {
+            return
+        }
+        val uri = sources.first().uri
+        if (uri.authority != "com.android.externalstorage.documents") {
+            return
+        }
+        val location = Location.Unopened.from(context, uri)
+        if (location.path.volume is Volume.ThirdParty) {
+            return
+        }
+        val current = musicSettings.mediaStoreQuery
+        musicSettings.mediaStoreQuery =
+            MediaStore.Query(
+                mode = MediaStore.FilterMode.INCLUDE,
+                filtered = listOf(location),
+                excludeNonMusic = current.excludeNonMusic,
+                excludedUris = musicSettings.hiddenUris,
+            )
+        musicSettings.locationMode = LocationMode.MEDIA_STORE
+        L.d("Migrated SAF source $uri to a MediaStore include filter")
+    }
+
     private suspend fun indexImpl(withCache: Boolean) {
         L.d("Index requested, initializing")
         // Obtain configuration information
@@ -398,6 +428,11 @@ constructor(
         L.d("Cache: $cache")
         val covers = settingCovers.mutate(context, newRevision)
         L.d("Covers: $covers")
+        // Local customization: a single local SAF folder is equivalent to a MediaStore include
+        // filter, but the MediaStore backend indexes much faster and supports automatic refresh
+        // after tag edits. Migrate such configurations once.
+        migrateSafToMediaStore()
+
         val fs =
             when (musicSettings.locationMode) {
                 LocationMode.SAF -> SAF.from(context, musicSettings.safQuery)

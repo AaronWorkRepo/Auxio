@@ -30,18 +30,26 @@ import android.view.View
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.widget.Toolbar
+import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.dynamicanimation.animation.SpringForce
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.FileInputStream
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.oxycblt.auxio.R
 import org.oxycblt.auxio.databinding.FragmentPlaybackPanelBinding
 import org.oxycblt.auxio.detail.DetailViewModel
 import org.oxycblt.auxio.list.ListViewModel
 import org.oxycblt.auxio.music.resolve
 import org.oxycblt.auxio.music.resolveNames
+import org.oxycblt.auxio.playback.lyrics.LyricsAdapter
 import org.oxycblt.auxio.playback.queue.QueueViewModel
 import org.oxycblt.auxio.playback.state.RepeatMode
 import org.oxycblt.auxio.playback.ui.StyledSeekBar
@@ -59,6 +67,7 @@ import org.oxycblt.auxio.util.smoothScrollByPageTo
 import org.oxycblt.auxio.util.systemBarInsetsCompat
 import org.oxycblt.musikr.MusicParent
 import org.oxycblt.musikr.Song
+import org.oxycblt.musikr.metadata.LyricsReader
 import timber.log.Timber as L
 
 /**
@@ -76,6 +85,10 @@ class PlaybackPanelFragment :
     StyledSeekBar.Listener,
     StepperOverlay.Listener {
     private val coverPagerAdapter = CoverPagerAdapter(this)
+    private val lyricsAdapter = LyricsAdapter()
+    private var lyricsVisible = false
+    private var lyrics: LyricsReader.Lyrics? = null
+    private var lyricsLineIndex = -1
     private val playbackModel: PlaybackViewModel by activityViewModels()
     private val detailModel: DetailViewModel by activityViewModels()
     private val listModel: ListViewModel by activityViewModels()
@@ -134,6 +147,13 @@ class PlaybackPanelFragment :
             dampen()
             offscreenPageLimit = 1
         }
+
+        binding.playbackLyrics?.apply {
+            adapter = lyricsAdapter
+            layoutManager = LinearLayoutManager(requireContext())
+            itemAnimator = null
+        }
+        binding.playbackLyricsEmpty?.isVisible = false
 
         // Set up fast seek overlay
         binding.playbackSong.apply {
@@ -230,6 +250,10 @@ class PlaybackPanelFragment :
     }
 
     override fun onMenuItemClick(item: MenuItem): Boolean {
+        if (item.itemId == R.id.action_toggle_lyrics) {
+            toggleLyrics()
+            return true
+        }
         if (item.itemId == R.id.action_open_equalizer) {
             // Launch the system equalizer app, if possible.
             L.d("Launching equalizer")
@@ -270,6 +294,90 @@ class PlaybackPanelFragment :
         binding.playbackArtist.text = song.artists.resolveNames(context)
         binding.playbackAlbum?.text = song.album.name.resolve(context)
         binding.playbackSeekBar?.durationDs = song.durationMs.msToDs()
+        if (lyricsVisible) {
+            loadLyrics(song)
+        }
+    }
+
+    private fun toggleLyrics() {
+        val binding = binding ?: return
+        lyricsVisible = !lyricsVisible
+        if (lyricsVisible) {
+            val song = playbackModel.song.value
+            if (song == null) {
+                binding.playbackLyrics?.isVisible = false
+                binding.playbackLyricsEmpty?.isVisible = true
+                return
+            }
+            loadLyrics(song)
+        } else {
+            lyrics = null
+            lyricsLineIndex = -1
+            lyricsAdapter.submit(emptyList())
+            binding.playbackLyrics?.isVisible = false
+            binding.playbackLyricsEmpty?.isVisible = false
+        }
+    }
+
+    private fun loadLyrics(song: Song) {
+        val binding = binding ?: return
+        val appContext = requireContext().applicationContext
+        val uid = song.uid
+        lyrics = null
+        lyricsLineIndex = -1
+        lyricsAdapter.submit(emptyList())
+        binding.playbackLyrics?.isVisible = false
+        binding.playbackLyricsEmpty?.isVisible = false
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val loaded =
+                withContext(Dispatchers.IO) {
+                    try {
+                        val pfd =
+                            appContext.contentResolver.openFileDescriptor(song.uri, "r")
+                                ?: return@withContext null
+                        try {
+                            FileInputStream(pfd.fileDescriptor).use { fis ->
+                                LyricsReader.read(song.uid.toString(), fis)
+                            }
+                        } finally {
+                            runCatching { pfd.close() }
+                        }
+                    } catch (e: Exception) {
+                        L.w(e, "Unable to read lyrics")
+                        null
+                    }
+                }
+            if (!lyricsVisible || playbackModel.song.value?.uid != uid) {
+                return@launch
+            }
+            lyrics = loaded
+            if (loaded == null) {
+                binding.playbackLyrics?.isVisible = false
+                binding.playbackLyricsEmpty?.isVisible = true
+            } else {
+                binding.playbackLyrics?.isVisible = true
+                binding.playbackLyricsEmpty?.isVisible = false
+                lyricsAdapter.submit(loaded.lines)
+                if (loaded.isSynced) {
+                    val index = lyricsAdapter.indexForPosition(playbackModel.positionDs.value * 100L)
+                    lyricsLineIndex = index
+                    lyricsAdapter.setCurrentIndex(index)
+                }
+            }
+        }
+    }
+
+    private fun scrollLyrics(index: Int) {
+        val recycler = binding?.playbackLyrics ?: return
+        val layoutManager = recycler.layoutManager as? LinearLayoutManager ?: return
+        recycler.post {
+            if (recycler.height > 0) {
+                layoutManager.scrollToPositionWithOffset(index, recycler.height / 2)
+            } else {
+                recycler.smoothScrollToPosition(index)
+            }
+        }
     }
 
     private fun updateParent(parent: MusicParent?) {
@@ -281,6 +389,20 @@ class PlaybackPanelFragment :
 
     private fun updatePosition(positionDs: Long) {
         requireBinding().playbackSeekBar?.positionDs = positionDs
+        if (lyricsVisible) {
+            val syncedLyrics = lyrics ?: return
+            if (!syncedLyrics.isSynced) {
+                return
+            }
+            val index = lyricsAdapter.indexForPosition(positionDs * 100L)
+            if (index != lyricsLineIndex) {
+                lyricsLineIndex = index
+                lyricsAdapter.setCurrentIndex(index)
+                if (index >= 0) {
+                    scrollLyrics(index)
+                }
+            }
+        }
     }
 
     private fun updateRepeat(repeatMode: RepeatMode) {

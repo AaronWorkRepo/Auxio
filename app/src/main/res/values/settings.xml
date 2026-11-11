@@ -14,6 +14,7 @@
     <string name="set_key_rescan" translatable="false">auxio_rescan</string>
     <string name="set_key_observing" translatable="false">auxio_observing</string>
     <string name="set_key_music_dirs" translatable="false">auxio_music_dirs</string>
+    <string name="set_key_library_folder" translatable="false">auxio_library_folder</string>
     <string name="set_key_excluded_dirs" translatable="false">auxio_excluded_dirs</string>
     <string name="set_key_fs_cache" translatable="false">auxio_fs_cache</string>
     <string name="set_key_cover_mode" translatable="false">auxio_cover_mode2</string>
@@ -62,6 +63,9 @@
     <string name="set_key_genre_songs_sort" translatable="false">auxio_genre_sort</string>
 
     <string name="set_key_library_revision" translatable="false">auxio_library_revision</string>
+
+    <!-- Local customization: files the user removed from the library (kept on disk). -->
+    <string name="set_key_hidden_uris" translatable="false">auxio_hidden_uris</string>
 
     <string name="set_key_force_reload_workaround" translatable="false">auxio_force_reload</string>
 

@@ -21,17 +21,26 @@ package org.oxycblt.auxio.detail
 import android.app.Dialog
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.Toast
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.activityViewModels
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlin.concurrent.thread
 import org.oxycblt.auxio.R
 import org.oxycblt.auxio.databinding.DialogEditTagsBinding
+import org.oxycblt.auxio.music.MusicSettings
+import org.oxycblt.auxio.music.MusicViewModel
+import org.oxycblt.auxio.music.locations.LocationMode
 import org.oxycblt.auxio.util.resolveAudioPath
 import org.oxycblt.musikr.metadata.TagEditor
 
@@ -41,11 +50,20 @@ import org.oxycblt.musikr.metadata.TagEditor
  * Empty fields clear the corresponding tag; fields the user did not touch are still written with
  * their current value (or cleared if they were unknown).
  */
+@AndroidEntryPoint
 class TagEditDialog : DialogFragment() {
+    private val musicModel: MusicViewModel by activityViewModels()
+    @Inject lateinit var musicSettings: MusicSettings
     private lateinit var binding: DialogEditTagsBinding
+    // Resolved up-front: the dialog can outlive the fragment/activity lifecycle states in which
+    // requireContext()/requireArguments() would throw.
+    private lateinit var appContext: android.content.Context
+    private lateinit var uriString: String
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val context = requireContext()
+        appContext = context.applicationContext
+        uriString = requireArguments().getString(ARG_URI).orEmpty()
         binding = DialogEditTagsBinding.inflate(layoutInflater)
         val args = requireArguments()
 
@@ -67,13 +85,26 @@ class TagEditDialog : DialogFragment() {
     }
 
     private fun save() {
-        val context = requireContext().applicationContext
-        val uri = requireArguments().getString(ARG_URI)?.let(Uri::parse) ?: return
+        val context = appContext
+        // Writing tags needs raw file access; without it TagLib can open but not save.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            Toast.makeText(context, R.string.err_need_all_files, Toast.LENGTH_LONG).show()
+            return
+        }
+        val uri = Uri.parse(uriString)
         val path = resolveAudioPath(context, uri)
         if (path == null) {
+            Log.w("TagEditDialog", "No filesystem path for $uri")
             Toast.makeText(context, R.string.err_no_edit_path, Toast.LENGTH_LONG).show()
             return
         }
+        Log.i("TagEditDialog", "Editing $path")
+        // Resolve the activity-scoped ViewModel while the dialog is still attached; the save
+        // callback runs after dismissal.
+        val viewModel = musicModel
+        // A full SAF reindex takes several seconds; only refresh automatically for the fast
+        // MediaStore backend.
+        val autoRefresh = musicSettings.locationMode == LocationMode.MEDIA_STORE
 
         // Only write fields the user actually changed, so untouched tags (which Auxio may have
         // decoded with a lossy charset) are never rewritten.
@@ -108,16 +139,17 @@ class TagEditDialog : DialogFragment() {
             }
             Handler(Looper.getMainLooper())
                 .post {
-                    Toast.makeText(
-                            context,
-                            if (success) {
-                                R.string.msg_tags_saved
-                            } else {
-                                R.string.err_tags_failed
-                            },
-                            Toast.LENGTH_SHORT,
-                        )
-                        .show()
+                    if (success && autoRefresh) {
+                        // Reload the library so the new tags are reflected in the UI.
+                        viewModel.refresh()
+                    }
+                    val message =
+                        when {
+                            !success -> R.string.err_tags_failed
+                            autoRefresh -> R.string.msg_tags_saved
+                            else -> R.string.msg_tags_saved_rescan
+                        }
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
         }
     }
@@ -129,7 +161,7 @@ class TagEditDialog : DialogFragment() {
     private fun text(edit: TextInputEditText) = edit.text?.toString()?.trim().orEmpty()
 
     private fun changed(edit: TextInputEditText, argKey: String): String? {
-        val original = requireArguments().getString(argKey).orEmpty()
+        val original = arguments?.getString(argKey).orEmpty()
         val current = text(edit)
         return if (current == original) null else current
     }

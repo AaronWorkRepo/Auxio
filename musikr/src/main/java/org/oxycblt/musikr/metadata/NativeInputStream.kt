@@ -23,10 +23,13 @@ import java.io.FileInputStream
 import java.nio.ByteBuffer
 import org.oxycblt.musikr.fs.File
 
-internal class NativeInputStream(private val deviceFile: File, fis: FileInputStream) {
+internal class NativeInputStream(fis: FileInputStream, private val displayName: String) {
     private val channel = fis.channel
 
-    fun name() = requireNotNull(deviceFile.path.name)
+    constructor(deviceFile: File, fis: FileInputStream) :
+        this(fis, requireNotNull(deviceFile.path.name))
+
+    fun name() = displayName
 
     fun readBlock(buf: ByteBuffer): Int {
         try {

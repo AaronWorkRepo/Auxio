@@ -33,6 +33,34 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/playback_toolbar" />
 
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/playback_lyrics"
+        style="@style/Widget.Auxio.RecyclerView.Linear"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:padding="@dimen/spacing_medium"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/playback_pager"
+        app:layout_constraintEnd_toStartOf="@+id/playback_info_container"
+        app:layout_constraintStart_toStartOf="@+id/playback_pager"
+        app:layout_constraintTop_toTopOf="@+id/playback_pager"
+        tools:listitem="@layout/item_lyrics" />
+
+    <TextView
+        android:id="@+id/playback_lyrics_empty"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:gravity="center"
+        android:padding="@dimen/spacing_medium"
+        android:text="@string/lng_no_lyrics"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/playback_pager"
+        app:layout_constraintEnd_toStartOf="@+id/playback_info_container"
+        app:layout_constraintStart_toStartOf="@+id/playback_pager"
+        app:layout_constraintTop_toTopOf="@+id/playback_pager" />
+
     <LinearLayout
         android:id="@+id/playback_info_container"
         android:layout_width="0dp"

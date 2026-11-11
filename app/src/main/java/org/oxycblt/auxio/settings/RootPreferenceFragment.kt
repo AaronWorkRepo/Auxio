@@ -18,7 +18,10 @@
  
 package org.oxycblt.auxio.settings
 
+import android.net.Uri
 import android.os.Bundle
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import androidx.preference.Preference
@@ -26,10 +29,17 @@ import androidx.preference.PreferenceFragmentCompat
 import com.google.android.material.transition.MaterialFadeThrough
 import com.google.android.material.transition.MaterialSharedAxis
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import org.oxycblt.auxio.R
+import org.oxycblt.auxio.music.MusicSettings
 import org.oxycblt.auxio.music.MusicViewModel
+import org.oxycblt.auxio.music.locations.LocationMode
 import org.oxycblt.auxio.settings.ui.WrappedDialogPreference
 import org.oxycblt.auxio.util.navigateSafe
+import org.oxycblt.auxio.util.showToast
+import org.oxycblt.musikr.fs.Location
+import org.oxycblt.musikr.fs.Volume
+import org.oxycblt.musikr.fs.mediastore.MediaStore
 import timber.log.Timber as L
 
 /**
@@ -40,14 +50,64 @@ import timber.log.Timber as L
 @AndroidEntryPoint
 class RootPreferenceFragment : BasePreferenceFragment(R.xml.preferences_root) {
     private val musicModel: MusicViewModel by activityViewModels()
+    @Inject lateinit var musicSettings: MusicSettings
+    private var folderPicker: ActivityResultLauncher<Uri?>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        folderPicker =
+            registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+                setLibraryFolder(uri)
+            }
 
         enterTransition = MaterialFadeThrough()
         returnTransition = MaterialFadeThrough()
         exitTransition = MaterialFadeThrough()
         reenterTransition = MaterialSharedAxis(MaterialSharedAxis.X, false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateLibraryFolderSummary()
+    }
+
+    // Local customization: point the library at a single folder picked by the user. This keeps
+    // MediaStore as the backend, so tag editing still works.
+    private fun setLibraryFolder(uri: Uri?) {
+        uri ?: return
+        val context = requireContext()
+        val location = Location.Unopened.from(context, uri)
+        if (location.path.volume is Volume.ThirdParty) {
+            context.showToast(R.string.err_bad_location)
+            return
+        }
+        val current = musicSettings.mediaStoreQuery
+        musicSettings.mediaStoreQuery =
+            MediaStore.Query(
+                mode = MediaStore.FilterMode.INCLUDE,
+                filtered = listOf(location),
+                excludeNonMusic = current.excludeNonMusic,
+                excludedUris = musicSettings.hiddenUris,
+            )
+        musicSettings.locationMode = LocationMode.MEDIA_STORE
+        // A full rescan (withCache=false) already rolls the library revision.
+        musicModel.rescan()
+        context.showToast(R.string.msg_library_folder_set)
+        updateLibraryFolderSummary()
+    }
+
+    private fun updateLibraryFolderSummary() {
+        val preference =
+            findPreference<Preference>(getString(R.string.set_key_library_folder)) ?: return
+        preference.summary =
+            when {
+                musicSettings.locationMode == LocationMode.SAF ->
+                    getString(R.string.set_library_folder_saf)
+                musicSettings.mediaStoreQuery.mode == MediaStore.FilterMode.INCLUDE ->
+                    getString(R.string.set_library_folder_include)
+                else -> getString(R.string.set_library_folder_desc)
+            }
     }
 
     override fun onOpenDialogPreference(preference: WrappedDialogPreference) {
@@ -81,6 +141,9 @@ class RootPreferenceFragment : BasePreferenceFragment(R.xml.preferences_root) {
             getString(R.string.set_key_audio) -> {
                 L.d("Navigating to audio preferences")
                 findNavController().navigateSafe(RootPreferenceFragmentDirections.audioPeferences())
+            }
+            getString(R.string.set_key_library_folder) -> {
+                folderPicker?.launch(null)
             }
             getString(R.string.set_key_reindex) -> musicModel.refresh()
             getString(R.string.set_key_rescan) -> musicModel.rescan()

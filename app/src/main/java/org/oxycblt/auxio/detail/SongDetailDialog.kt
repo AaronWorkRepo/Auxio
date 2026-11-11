@@ -111,7 +111,11 @@ class SongDetailDialog : ViewBindingMaterialDialogFragment<DialogSongDetailBindi
             )
             // NOTE(local): use the parent manager; this dialog is dismissed when the neutral
             // button is pressed, which would also tear down a child-fragment dialog.
-            .show(parentFragmentManager, "edit_tags")
+            .also { dialog ->
+                if (!parentFragmentManager.isStateSaved) {
+                    dialog.show(parentFragmentManager, "edit_tags")
+                }
+            }
     }
 
     private fun updateSongProperties(songProperties: List<SongProperty>) {

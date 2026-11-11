@@ -28,6 +28,11 @@
 
     <PreferenceCategory app:title="@string/set_library">
 
+        <Preference
+            app:key="@string/set_key_library_folder"
+            app:summary="@string/set_library_folder_desc"
+            app:title="@string/set_library_folder" />
+
         <org.oxycblt.auxio.settings.ui.WrappedDialogPreference
             app:key="@string/set_key_music_dirs"
             app:summary="@string/set_locations_desc"

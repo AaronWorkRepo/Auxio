@@ -21,8 +21,10 @@ package org.oxycblt.auxio.util
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import java.io.File
 
 private const val TAG = "AudioFilePaths"
 
@@ -37,6 +39,43 @@ fun resolveAudioPath(context: Context, uri: Uri): String? {
         return uri.path
     }
 
+    // File Picker (SAF) libraries expose external-storage document URIs, which encode the real
+    // path as "<volumeId>:<relative path>".
+    if (uri.authority == "com.android.externalstorage.documents") {
+        try {
+            // "tree/<id>" points at a folder; "tree/<id>/document/<docId>" and "document/<docId>"
+            // point at a file. Only the latter should be used for tag writing.
+            val segments = uri.pathSegments
+            val hasDocumentSegment =
+                (segments.size >= 4 && segments[0] == "tree" && segments[2] == "document") ||
+                    (segments.size >= 2 && segments[0] == "document")
+            val documentId =
+                if (hasDocumentSegment) {
+                    DocumentsContract.getDocumentId(uri)
+                } else {
+                    DocumentsContract.getTreeDocumentId(uri)
+                }
+            val separator = documentId.indexOf(':')
+            if (separator > 0) {
+                val volumeId = documentId.substring(0, separator)
+                val relative = documentId.substring(separator + 1)
+                val base =
+                    when (volumeId) {
+                        "primary" -> "/storage/emulated/0"
+                        else -> "/storage/$volumeId"
+                    }
+                val candidate = "$base/$relative"
+                if (File(candidate).exists()) {
+                    return candidate
+                }
+                Log.w(TAG, "SAF document path does not exist: $candidate")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to decode SAF document id for $uri", e)
+        }
+    }
+
+    var dataPath: String? = null
     try {
         context.contentResolver
             .query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)
@@ -44,9 +83,7 @@ fun resolveAudioPath(context: Context, uri: Uri): String? {
                 if (cursor.moveToFirst()) {
                     val index = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                     if (index >= 0) {
-                        cursor.getString(index)?.takeIf { it.isNotEmpty() }?.let {
-                            return it
-                        }
+                        dataPath = cursor.getString(index)?.takeIf { it.isNotEmpty() }
                     }
                 }
             }
@@ -54,7 +91,14 @@ fun resolveAudioPath(context: Context, uri: Uri): String? {
         Log.w(TAG, "DATA column query failed", e)
     }
 
+    if (dataPath != null && File(dataPath!!).exists()) {
+        return dataPath
+    }
+
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        var relative: String? = null
+        var name: String? = null
+        var volume: String? = null
         try {
             context.contentResolver
                 .query(
@@ -62,6 +106,7 @@ fun resolveAudioPath(context: Context, uri: Uri): String? {
                     arrayOf(
                         MediaStore.Audio.Media.RELATIVE_PATH,
                         MediaStore.MediaColumns.DISPLAY_NAME,
+                        MediaStore.Audio.Media.VOLUME_NAME,
                     ),
                     null,
                     null,
@@ -69,14 +114,31 @@ fun resolveAudioPath(context: Context, uri: Uri): String? {
                 )
                 ?.use { cursor ->
                     if (cursor.moveToFirst()) {
-                        val relative = cursor.getString(0) ?: return null
-                        val name = cursor.getString(1) ?: return null
-                        return "/storage/emulated/0/$relative$name"
+                        relative = cursor.getString(0)
+                        name = cursor.getString(1)
+                        volume = cursor.getString(2)
                     }
                 }
         } catch (e: Exception) {
             Log.w(TAG, "relative_path query failed", e)
         }
+
+        if (relative != null && name != null) {
+            val base =
+                when (volume) {
+                    null, "external_primary" -> "/storage/emulated/0"
+                    else -> "/storage/$volume"
+                }
+            val candidate = "$base/$relative$name"
+            if (File(candidate).exists()) {
+                return candidate
+            }
+            Log.w(TAG, "Candidate path does not exist: $candidate")
+        }
     }
-    return null
+
+    Log.w(TAG, "Unable to resolve a filesystem path for $uri (DATA=$dataPath)")
+    // Return the DATA path even if it is missing so callers report a save failure rather than
+    // pretending the location is unsupported.
+    return dataPath
 }

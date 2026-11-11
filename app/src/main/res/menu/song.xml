@@ -36,4 +36,8 @@
         android:id="@+id/action_share"
         android:icon="@drawable/ic_share_24"
         android:title="@string/lbl_share" />
+    <item
+        android:id="@+id/action_remove_from_library"
+        android:icon="@drawable/ic_close_24"
+        android:title="@string/lbl_remove_from_library" />
 </menu>
